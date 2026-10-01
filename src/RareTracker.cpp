@@ -93,7 +93,7 @@ namespace
     {
         std::unordered_map<uint32, RareKind> kinds;  // creature entry -> what it is
         std::vector<RareSpawn> spawns;
-        std::map<uint32, std::string> zoneNames;      // zone id -> name, every zone with a rare
+        std::map<uint32, std::string> zoneNames;      // zone id -> name, filled in as zones come up
     } rareIndex;
 
     SnapshotHttpServer httpServer;
@@ -180,13 +180,15 @@ namespace
         return name && *name ? name : names[LOCALE_enUS];
     }
 
-    void RememberZoneName(uint32 zoneId)
+    // Name of a zone, looked up once and kept. Only used on the world thread.
+    std::string const& ZoneName(uint32 zoneId)
     {
-        if (!zoneId || rareIndex.zoneNames.count(zoneId))
-            return;
+        auto itr = rareIndex.zoneNames.find(zoneId);
+        if (itr != rareIndex.zoneNames.end())
+            return itr->second;
 
-        if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId))
-            rareIndex.zoneNames[zoneId] = DbcString(area->area_name);
+        AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId);
+        return rareIndex.zoneNames[zoneId] = area ? DbcString(area->area_name) : "";
     }
 
     // Zone ids the database already has (the core fills them in when
@@ -243,7 +245,7 @@ namespace
                 ++computed;
             }
 
-            RememberZoneName(spawn.zone);
+            ZoneName(spawn.zone);
             rareIndex.spawns.push_back(spawn);
 
             RareKind& kind = rareIndex.kinds[proto->Entry];
@@ -290,21 +292,82 @@ namespace
         return zone && x >= 0.0f && x <= 100.0f && y >= 0.0f && y <= 100.0f && !(x == worldX && y == worldY);
     }
 
+    // Zones with no world map of their own: the open-air parts of dungeon entrances and Dalaran.
+    // The game shows them on the map of the zone around them, so the rare map does too.
+    std::unordered_map<uint32, std::vector<uint32>> const OUTDOOR_ZONES =
+    {
+        { 25,   { 51, 46 } },  // Blackrock Mountain: Searing Gorge, Burning Steppes
+        { 1583, { 51, 46 } },  // Blackrock Spire
+        { 1584, { 51, 46 } },  // Blackrock Depths
+        { 1581, { 40 } },      // The Deadmines: Westfall
+        { 718,  { 17 } },      // Wailing Caverns: The Barrens
+        { 491,  { 17 } },      // Razorfen Kraul
+        { 722,  { 17 } },      // Razorfen Downs
+        { 719,  { 331 } },     // Blackfathom Deeps: Ashenvale
+        { 209,  { 130 } },     // Shadowfang Keep: Silverpine Forest
+        { 721,  { 1 } },       // Gnomeregan: Dun Morogh
+        { 796,  { 85 } },      // Scarlet Monastery: Tirisfal Glades
+        { 1337, { 3 } },       // Uldaman: Badlands
+        { 1176, { 440 } },     // Zul'Farrak: Tanaris
+        { 2100, { 405 } },     // Maraudon: Desolace
+        { 1477, { 8 } },       // The Temple of Atal'Hakkar: Swamp of Sorrows
+        { 2557, { 357 } },     // Dire Maul: Feralas
+        { 2017, { 139 } },     // Stratholme: Eastern Plaguelands
+        { 2057, { 28 } },      // Scholomance: Western Plaguelands
+        { 4395, { 2817 } },    // Dalaran: Crystalsong Forest
+    };
+
+    // Map coordinates for a spot, moving it to the zone around it when its own zone has no map:
+    // first the zones listed above, then any other zone on the same map whose map covers the spot
+    // (nearest that map's centre). zone becomes the zone it's shown in.
+    bool PlaceOnZoneMap(uint16 mapId, uint32& zone, float worldX, float worldY, float& x, float& y)
+    {
+        if (ZoneCoordinates(zone, worldX, worldY, x, y))
+            return true;
+
+        if (auto itr = OUTDOOR_ZONES.find(zone); itr != OUTDOOR_ZONES.end())
+            for (uint32 outdoor : itr->second)
+                if (ZoneCoordinates(outdoor, worldX, worldY, x, y))
+                {
+                    zone = outdoor;
+                    return true;
+                }
+
+        uint32 best = 0;
+        float bestDistance = 0.0f;
+        for (AreaTableEntry const* area : sAreaTableStore)
+        {
+            if (area->zone || area->mapid != mapId || area->ID == zone)
+                continue;
+
+            float ax;
+            float ay;
+            if (!ZoneCoordinates(area->ID, worldX, worldY, ax, ay))
+                continue;
+
+            float distance = (ax - 50.0f) * (ax - 50.0f) + (ay - 50.0f) * (ay - 50.0f);
+            if (!best || distance < bestDistance)
+            {
+                best = area->ID;
+                bestDistance = distance;
+                x = ax;
+                y = ay;
+            }
+        }
+
+        if (!best)
+            return false;
+
+        zone = best;
+        return true;
+    }
+
     // Runs on the world thread after the maps have finished updating, so map state is stable.
     std::string BuildSnapshot(int64 now)
     {
         std::ostringstream json;
-        json << "{\"generated\":" << now << ",\"refresh\":" << config.refreshSeconds << ",\"zones\":{";
-
+        std::map<uint32, std::string const*> zones; // every zone the list mentions
         bool first = true;
-        for (auto const& [zoneId, name] : rareIndex.zoneNames)
-        {
-            json << (first ? "" : ",") << '"' << zoneId << "\":" << JsonString(name);
-            first = false;
-        }
-
-        json << "},\"rares\":[";
-        first = true;
         uint32 up = 0;
 
         for (RareSpawn const& spawn : rareIndex.spawns)
@@ -368,16 +431,27 @@ namespace
 
             RareKind const& kind = rareIndex.kinds[spawn.entry];
 
+            // A rare at a dungeon entrance or in Dalaran goes on the surrounding zone's map, and
+            // "area" keeps the place it's really in.
+            uint32 area = zone;
+            float x;
+            float y;
+            bool placed = PlaceOnZoneMap(spawn.map, zone, worldX, worldY, x, y);
+            zones.emplace(zone, &ZoneName(zone));
+
             json << (first ? "" : ",") << "{\"spawn\":" << spawn.spawnId << ",\"entry\":" << spawn.entry
                  << ",\"name\":" << JsonString(kind.name)
                  << ",\"minLevel\":" << uint32(kind.minLevel) << ",\"maxLevel\":" << uint32(kind.maxLevel)
                  << ",\"elite\":" << (kind.elite ? "true" : "false")
-                 << ",\"map\":" << spawn.map << ",\"zone\":" << zone
-                 << ",\"wx\":" << Acore::StringFormat("{:.1f}", worldX) << ",\"wy\":" << Acore::StringFormat("{:.1f}", worldY);
+                 << ",\"map\":" << spawn.map << ",\"zone\":" << zone;
+            if (area != zone)
+            {
+                zones.emplace(area, &ZoneName(area));
+                json << ",\"area\":" << area;
+            }
+            json << ",\"wx\":" << Acore::StringFormat("{:.1f}", worldX) << ",\"wy\":" << Acore::StringFormat("{:.1f}", worldY);
 
-            float x;
-            float y;
-            if (ZoneCoordinates(zone, worldX, worldY, x, y))
+            if (placed)
                 json << ",\"x\":" << Acore::StringFormat("{:.2f}", x) << ",\"y\":" << Acore::StringFormat("{:.2f}", y);
             else
                 json << ",\"x\":null,\"y\":null";
@@ -401,8 +475,15 @@ namespace
             first = false;
         }
 
-        json << "],\"up\":" << up << "}";
-        return json.str();
+        std::string out = Acore::StringFormat("{{\"generated\":{},\"refresh\":{},\"up\":{},\"zones\":{{", now, config.refreshSeconds, up);
+        first = true;
+        for (auto const& [zoneId, name] : zones)
+        {
+            out += Acore::StringFormat("{}\"{}\":{}", first ? "" : ",", zoneId, JsonString(*name));
+            first = false;
+        }
+
+        return out + "},\"rares\":[" + json.str() + "]}";
     }
 
     std::unordered_set<uint32> ParseEntries(std::string const& text)

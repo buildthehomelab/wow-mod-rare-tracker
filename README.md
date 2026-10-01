@@ -142,6 +142,7 @@ from bot-only groups, from bots defending themselves when a rare aggroes them, a
 | Field | Meaning |
 |---|---|
 | `x`, `y` | Zone map coordinates, as the in-game map shows them (`null` if the zone has no map). |
+| `zone`, `area` | The zone whose map shows the rare. A rare at a dungeon entrance or in Dalaran is shown on the surrounding zone's map, as in game, and `area` is the place it's really in (e.g. zone Westfall, area The Deadmines). |
 | `wx`, `wy` | World coordinates. |
 | `state` | `up` or `dead`. |
 | `respawnAt` | When a dead rare comes back (unix time), if known. |
