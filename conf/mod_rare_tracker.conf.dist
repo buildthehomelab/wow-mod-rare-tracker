@@ -1,0 +1,91 @@
+[worldserver]
+
+########################################
+# mod-rare-tracker
+#
+# Tracks every rare and rare elite on the open-world maps (no instances) and serves the list as
+# JSON over HTTP from memory, for a live rare map on the realm's website. Nothing is written to
+# disk. It can also keep playerbots that aren't grouped with a real player off rares.
+########################################
+
+#
+#    RareTracker.Enable
+#        Description: Master switch. 0 turns off the tracker, the HTTP endpoint and the bot rule.
+#        Default:     1
+#
+
+RareTracker.Enable = 1
+
+#
+#    RareTracker.BotsIgnoreRares
+#        Description: Playerbots with no real player in their group (and their pets) see every
+#                     open-world rare as friendly: they can't target or damage it, their AoE skips
+#                     it and the rare won't aggro them. Bots grouped with a real player fight rares
+#                     as normal.
+#        Default:     1
+#
+
+RareTracker.BotsIgnoreRares = 1
+
+#
+#    RareTracker.RefreshSeconds
+#        Description: How often the rare list is rebuilt while someone is looking at it.
+#                     Minimum 5.
+#        Default:     30
+#
+
+RareTracker.RefreshSeconds = 30
+
+#
+#    RareTracker.IdleSeconds
+#        Description: Stop rebuilding the list when nobody has asked for it for this long. The
+#                     next request gets the old list, and a fresh one follows within a second.
+#        Default:     120
+#
+
+RareTracker.IdleSeconds = 120
+
+#
+#    RareTracker.ExcludeEntries
+#        Description: Creature entries to leave out, comma separated: creatures ranked rare that
+#                     aren't really rares. They're also left out of the bot rule. Restart to change.
+#        Example:     "12345, 23456"
+#        Default:     ""
+#
+
+RareTracker.ExcludeEntries = ""
+
+#
+#    RareTracker.Http.Enable
+#        Description: Serve the list at http://<BindAddress>:<Port>/rares.json (also at /, and
+#                     /health answers "ok"). The HTTP settings are read at startup only.
+#        Default:     1
+#
+
+RareTracker.Http.Enable = 1
+
+#
+#    RareTracker.Http.BindAddress
+#        Description: Address to listen on. In Docker, 0.0.0.0 makes it reachable from other
+#                     containers on the AzerothCore network (the portal) without publishing a port
+#                     on the host. Use 127.0.0.1 outside Docker to keep it local.
+#        Default:     "0.0.0.0"
+#
+
+RareTracker.Http.BindAddress = "0.0.0.0"
+
+#
+#    RareTracker.Http.Port
+#        Default:     8095
+#
+
+RareTracker.Http.Port = 8095
+
+#
+#    RareTracker.Http.AllowOrigin
+#        Description: Access-Control-Allow-Origin header, for pages that fetch the list straight
+#                     from the browser. Empty leaves the header out.
+#        Default:     "*"
+#
+
+RareTracker.Http.AllowOrigin = "*"
