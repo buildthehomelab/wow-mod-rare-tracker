@@ -58,34 +58,33 @@ The portal passes the list through `api/rares.php`, so browsers never talk to th
 ## Map images
 
 The page draws rares on the game's own world maps. Those are Blizzard art, so they aren't in
-this repo. Build them once from your client with `tools/build_worldmaps.py`, which needs Python 3
-and Pillow (`python3 -m pip install pillow`).
+this repo. Build them once from your WoW client with `tools/build_worldmaps.py`. It reads the
+client's MPQs directly (patches included), on Windows, macOS or Linux, and only needs Python 3
+and Pillow.
 
-1. Get the files out of the client, either way:
-   - **Extract them.** With [Ladik's MPQ Editor](http://www.zezula.net/en/mpq/download.html)
-     (Windows), open the client's `Data` folder and extract `Interface\WorldMap` plus
-     `DBFilesClient\WorldMapArea.dbc`, `WorldMapOverlay.dbc` and `WorldMapTransforms.dbc` into
-     one folder. Then run:
+On Windows, from the `tools` folder:
 
-     ```bash
-     python3 tools/build_worldmaps.py --extracted path/to/extracted --out worldmap
-     ```
+```bat
+py -m pip install pillow
+py build_worldmaps.py --mpq-dir "C:\World of Warcraft\Data" --out worldmap
+```
 
-   - **Read the MPQs directly.** Use this if you have the client's `Data` folder and
-     [StormLib](https://github.com/ladislav-zezula/StormLib) on the machine (set `STORMLIB` if
-     it isn't `/usr/local/lib/libstorm.dylib`):
+On macOS or Linux:
 
-     ```bash
-     python3 tools/build_worldmaps.py --mpq-dir path/to/WoW/Data --out worldmap
-     ```
+```bash
+python3 -m pip install pillow
+python3 tools/build_worldmaps.py --mpq-dir /path/to/WoW/Data --out worldmap
+```
 
-2. Copy the `worldmap` folder into the portal's `realm-public` folder (`REALM_CONFIG_DIR`), so
-   it's served at `/realm/worldmap/`.
+It prints one line per map and ends with `4 continents and N zones written to worldmap`. Copy
+the `worldmap` folder into the portal's `realm-public` folder (`REALM_CONFIG_DIR`), so it's
+served at `/realm/worldmap/`; no rebuild is needed.
 
 The tool paints every explored-area overlay onto each zone, so maps look fully explored. It
 writes one `zone-<id>.jpg` per zone, one `continent-<mapId>.jpg` per continent, and `maps.json`
-with each continent's edges. Without the images, the page still works: it lists every rare and
-places them on a plain grid.
+with each continent's edges. If you've already extracted `Interface\WorldMap` and
+`DBFilesClient` from the MPQs, pass that folder with `--extracted` instead of `--mpq-dir`.
+Without the images, the page still works: it lists every rare and places them on a plain grid.
 
 ## Configuration
 
