@@ -46,6 +46,18 @@ RareTracker.RefreshSeconds = 30
 RareTracker.IdleSeconds = 120
 
 #
+#    RareTracker.IncludeEntries
+#        Description: Extra creature entries to track, comma separated: creatures that aren't
+#                     ranked rare but are worth hunting, like the Blood Elf Bandit (17591) on
+#                     Azuremyst Isle. Every spawn of the entry shows on the map, and the bot rule
+#                     covers them too. Restart to change.
+#        Example:     "17591"
+#        Default:     ""
+#
+
+RareTracker.IncludeEntries = ""
+
+#
 #    RareTracker.ExcludeEntries
 #        Description: Creature entries to leave out, comma separated: creatures ranked rare that
 #                     aren't really rares. They're also left out of the bot rule. Restart to change.
