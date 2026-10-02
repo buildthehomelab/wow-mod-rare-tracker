@@ -64,6 +64,7 @@ namespace
         std::string allowOrigin = "*";
         uint32 refreshSeconds = 30;
         uint32 idleSeconds = 120;
+        std::unordered_set<uint32> includedEntries;
         std::unordered_set<uint32> excludedEntries;
     } config;
 
@@ -132,6 +133,13 @@ namespace
         return rank == CREATURE_ELITE_RARE || rank == CREATURE_ELITE_RAREELITE;
     }
 
+    // Ranked rare, or added with IncludeEntries, and not left out with ExcludeEntries.
+    bool IsTrackedTemplate(CreatureTemplate const* proto)
+    {
+        return (IsRareRank(proto->rank) || config.includedEntries.count(proto->Entry))
+            && !config.excludedEntries.count(proto->Entry);
+    }
+
     bool IsOpenWorldMap(uint32 mapId)
     {
         MapEntry const* map = sMapStore.LookupEntry(mapId);
@@ -153,8 +161,7 @@ namespace
             return false;
 
         CreatureTemplate const* proto = unit->ToCreature()->GetCreatureTemplate();
-        return proto && IsRareRank(proto->rank) && IsOpenWorldMap(unit->GetMapId())
-            && !config.excludedEntries.count(proto->Entry);
+        return proto && IsTrackedTemplate(proto) && IsOpenWorldMap(unit->GetMapId());
     }
 
     // A bot, or a bot's pet, totem or guardian, with no real player in its group.
@@ -229,8 +236,8 @@ namespace
                 continue;
 
             CreatureTemplate const* proto = sObjectMgr->GetCreatureTemplate(data.id);
-            if (!proto || !IsRareRank(proto->rank) || proto->HasFlagsExtra(CREATURE_FLAG_EXTRA_TRIGGER)
-                || LooksLikePlaceholder(proto->Name) || config.excludedEntries.count(proto->Entry))
+            if (!proto || !IsTrackedTemplate(proto) || proto->HasFlagsExtra(CREATURE_FLAG_EXTRA_TRIGGER)
+                || LooksLikePlaceholder(proto->Name))
                 continue;
 
             RareSpawn spawn;
@@ -530,6 +537,7 @@ public:
         // Read on map threads and fixed at startup, so these need a restart to change.
         if (!reload)
         {
+            config.includedEntries = ParseEntries(sConfigMgr->GetOption<std::string>("RareTracker.IncludeEntries", ""));
             config.excludedEntries = ParseEntries(sConfigMgr->GetOption<std::string>("RareTracker.ExcludeEntries", ""));
             config.httpEnabled = sConfigMgr->GetOption<bool>("RareTracker.Http.Enable", true);
             config.httpAddress = sConfigMgr->GetOption<std::string>("RareTracker.Http.BindAddress", "0.0.0.0");

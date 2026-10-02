@@ -94,6 +94,7 @@ Without the images, the page still works: it lists every rare and places them on
 | `RareTracker.BotsIgnoreRares` | `1` | Keep ungrouped playerbots off open-world rares (see below). |
 | `RareTracker.RefreshSeconds` | `30` | How often the list is rebuilt while someone is watching (min. 5). |
 | `RareTracker.IdleSeconds` | `120` | Stop rebuilding when nobody has asked for this long. |
+| `RareTracker.IncludeEntries` | `""` | Comma-separated creature entries to track although they aren't ranked rare (e.g. `17591`, Blood Elf Bandit). Restart to change. |
 | `RareTracker.ExcludeEntries` | `""` | Comma-separated creature entries that are ranked rare but aren't really rares. Restart to change. |
 | `RareTracker.Http.Enable` | `1` | Serve the list. |
 | `RareTracker.Http.BindAddress` | `0.0.0.0` | `0.0.0.0` in Docker; `127.0.0.1` to keep it local outside Docker. |
