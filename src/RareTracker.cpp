@@ -101,8 +101,15 @@ namespace
 
     // --- Telling rares and bots apart ---------------------------------------------------------
 
-    // The playerbots fork adds WorldSession::IsBot(); stock AzerothCore doesn't have it. Looking for
-    // it at compile time lets the module build on both.
+    // Bots are sessions without a socket. AzerothCore marks them with WorldSession::IsHeadless();
+    // older playerbots core forks have WorldSession::IsBot() instead, and older stock cores have
+    // neither. Looking for both at compile time lets the module build on all of them.
+    template <typename Session, typename = void>
+    struct HasIsHeadless : std::false_type { };
+
+    template <typename Session>
+    struct HasIsHeadless<Session, std::void_t<decltype(std::declval<Session&>().IsHeadless())>> : std::true_type { };
+
     template <typename Session, typename = void>
     struct HasIsBot : std::false_type { };
 
@@ -112,7 +119,9 @@ namespace
     template <typename Session>
     bool IsBotSession(Session* session)
     {
-        if constexpr (HasIsBot<Session>::value)
+        if constexpr (HasIsHeadless<Session>::value)
+            return session && session->IsHeadless();
+        else if constexpr (HasIsBot<Session>::value)
             return session && session->IsBot();
         else
             return false;
