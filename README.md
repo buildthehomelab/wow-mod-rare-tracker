@@ -18,6 +18,17 @@ still there when real players come looking.
 The matching web page is in [wow-mod-azerothcore-portal](https://github.com/buildthehomelab/wow-mod-azerothcore-portal)
 (`rares.php`). It has continent and zone maps, a searchable list, and respawn countdowns.
 
+## Requirements
+
+- An AzerothCore WotLK server (`azerothcore-wotlk`, master). Stock core only; the module needs no
+  SQL and no client patch.
+- Optional: [mod-playerbots](https://github.com/mod-playerbots/mod-playerbots) (with its
+  AzerothCore fork) for `RareTracker.BotsIgnoreRares`; it does nothing without bots.
+- Optional: the [wow-mod-azerothcore-portal](https://github.com/buildthehomelab/wow-mod-azerothcore-portal)
+  website for the rare map page (`rares.php`), or anything else that can read `/rares.json`.
+- Optional, for the map images: Python 3 with Pillow and a WoW 3.3.5a (12340) client's `Data`
+  folder.
+
 ## Install
 
 The folder name matters: AzerothCore derives the loader symbol from it.
@@ -151,6 +162,22 @@ from bot-only groups, from bots defending themselves when a rare aggroes them, a
 Every snapshot is rebuilt on the world thread between map updates. The HTTP server runs on its
 own thread and only hands out the last snapshot, so requests never touch game state.
 
+## Troubleshooting
+
+- **The website shows no rares.** Check that the portal can reach the worldserver. From another
+  container on the AzerothCore network, `http://ac-worldserver:8095/health` should answer `ok`,
+  and the portal's `RARE_TRACKER_URL` must point at `http://ac-worldserver:8095/rares.json`.
+- **Changing the HTTP settings has no effect.** `RareTracker.Http.*` is read at startup only.
+  Restart the worldserver. Outside Docker, set `RareTracker.Http.BindAddress` to `127.0.0.1` to
+  keep it local.
+- **Rares sit on a plain grid with no map.** The map images aren't built. Run
+  `tools/build_worldmaps.py` against your client and copy the `worldmap` folder into the portal's
+  `realm-public` folder.
+
+## Credits
+
+Author: [buildthehomelab](https://github.com/buildthehomelab)
+
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
