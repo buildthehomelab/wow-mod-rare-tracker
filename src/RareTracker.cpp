@@ -1,8 +1,9 @@
 /*
  * mod-rare-tracker
  *
- * Tracks every rare and rare elite on the open-world maps (no instances) and serves the list as
- * JSON over HTTP straight from memory, for a live rare map on the realm's website:
+ * Tracks every rare and rare elite on the open-world maps (no instances), plus the world bosses
+ * (Azuregos, Lord Kazzak, the Emerald Dragons, Doomwalker, ...), and serves the list as JSON over
+ * HTTP straight from memory, for a live rare map on the realm's website:
  *
  *   GET http://<worldserver>:8095/rares.json
  *
@@ -15,9 +16,10 @@
  * for it. Only spawns the server would actually load count: pooled rares at the spot the pool
  * picked, event spawns while their event runs, and nothing phased away.
  *
- * It can also keep playerbots off rares (BotsIgnoreRares). A bot that isn't grouped with a real
- * player, and its pets, see every open-world rare as friendly: they can't target it, their AoE
- * skips it and the rare won't aggro them. Bots in a real player's group fight rares as normal.
+ * It can also keep playerbots off rares (BotsIgnoreRares) and world bosses (BotsIgnoreWorldBosses).
+ * A bot that isn't grouped with a real player, and its pets, see them as friendly: they can't
+ * target them, their AoE skips them and they won't aggro the bots. Bots in a real player's group
+ * fight them as normal.
  *
  * Released under the MIT License.
  */
@@ -58,6 +60,7 @@ namespace
     {
         bool enabled = true;
         bool botsIgnoreRares = true;
+        bool botsIgnoreWorldBosses = true;
         bool httpEnabled = true;
         std::string httpAddress = "0.0.0.0";
         uint16 httpPort = 8095;
@@ -66,7 +69,13 @@ namespace
         uint32 idleSeconds = 120;
         std::unordered_set<uint32> includedEntries;
         std::unordered_set<uint32> excludedEntries;
+        std::unordered_set<uint32> worldBosses;
     } config;
+
+    // Open-world bosses up to Wrath (Wrath's own world bosses all live in instances). Rank alone
+    // can't pick them out: faction leaders and a lot of quest bosses are ranked "boss" too.
+    char const* const DEFAULT_WORLD_BOSSES =
+        "6109, 12397, 14887, 14888, 14889, 14890, 17711, 18728";
 
     struct RareKind
     {
@@ -74,6 +83,7 @@ namespace
         uint8 minLevel = 0;
         uint8 maxLevel = 0;
         bool elite = false;
+        bool boss = false;
     };
 
     struct RareSpawn
@@ -133,10 +143,15 @@ namespace
         return rank == CREATURE_ELITE_RARE || rank == CREATURE_ELITE_RAREELITE;
     }
 
-    // Ranked rare, or added with IncludeEntries, and not left out with ExcludeEntries.
+    bool IsWorldBoss(uint32 entry)
+    {
+        return config.worldBosses.count(entry) != 0;
+    }
+
+    // Ranked rare, a world boss or added with IncludeEntries, and not left out with ExcludeEntries.
     bool IsTrackedTemplate(CreatureTemplate const* proto)
     {
-        return (IsRareRank(proto->rank) || config.includedEntries.count(proto->Entry))
+        return (IsRareRank(proto->rank) || IsWorldBoss(proto->Entry) || config.includedEntries.count(proto->Entry))
             && !config.excludedEntries.count(proto->Entry);
     }
 
@@ -153,15 +168,25 @@ namespace
             || name.find("(PH)") != std::string::npos;
     }
 
-    // A rare out in the open world (not a pet or anything else a player controls). This runs on
-    // every reaction check, so the cheap tests go first.
-    bool IsOpenWorldRare(Unit const* unit)
+    // A rare or world boss out in the open world (not a pet or anything else a player controls)
+    // that free-roaming bots must leave alone, per BotsIgnoreRares and BotsIgnoreWorldBosses.
+    // This runs on every reaction check, so the cheap tests go first.
+    bool IsBotProof(Unit const* unit)
     {
         if (!unit->IsCreature() || unit->IsControlledByPlayer())
             return false;
 
         CreatureTemplate const* proto = unit->ToCreature()->GetCreatureTemplate();
-        return proto && IsTrackedTemplate(proto) && IsOpenWorldMap(unit->GetMapId());
+        if (!proto || !IsTrackedTemplate(proto))
+            return false;
+
+        return (IsWorldBoss(proto->Entry) ? config.botsIgnoreWorldBosses : config.botsIgnoreRares)
+            && IsOpenWorldMap(unit->GetMapId());
+    }
+
+    bool AnyBotRule()
+    {
+        return config.enabled && (config.botsIgnoreRares || config.botsIgnoreWorldBosses);
     }
 
     // A bot, or a bot's pet, totem or guardian, with no real player in its group.
@@ -185,7 +210,7 @@ namespace
 
     bool KeepBotOffRare(Unit const* a, Unit const* b)
     {
-        return (IsOpenWorldRare(a) && IsFreeRoamingBot(b)) || (IsOpenWorldRare(b) && IsFreeRoamingBot(a));
+        return (IsBotProof(a) && IsFreeRoamingBot(b)) || (IsBotProof(b) && IsFreeRoamingBot(a));
     }
 
     // --- Index of rare spawns, built once at startup -----------------------------------------
@@ -232,7 +257,13 @@ namespace
 
         for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
         {
-            if (!IsOpenWorldMap(data.mapid) || !(data.phaseMask & PHASEMASK_NORMAL))
+            if (!IsOpenWorldMap(data.mapid) || !data.phaseMask)
+                continue;
+
+            // Rares outside the normal phase are phased away (quest phasing). World bosses count in
+            // any phase: mod-individual-progression puts the Emerald Dragons in its own phase, and
+            // the map is public, so who can see them doesn't matter.
+            if (!(data.phaseMask & PHASEMASK_NORMAL) && !IsWorldBoss(data.id))
                 continue;
 
             CreatureTemplate const* proto = sObjectMgr->GetCreatureTemplate(data.id);
@@ -269,10 +300,15 @@ namespace
             kind.minLevel = proto->minlevel;
             kind.maxLevel = proto->maxlevel;
             kind.elite = proto->rank == CREATURE_ELITE_RAREELITE;
+            kind.boss = IsWorldBoss(proto->Entry);
         }
 
-        LOG_INFO("server.loading", ">> mod-rare-tracker: {} rare spawns of {} rares in {} zones (worked out {} zones) in {} ms",
-            rareIndex.spawns.size(), rareIndex.kinds.size(), rareIndex.zoneNames.size(), computed, GetMSTimeDiffToNow(oldMSTime));
+        uint32 bosses = uint32(std::count_if(rareIndex.kinds.begin(), rareIndex.kinds.end(),
+            [](auto const& kind) { return kind.second.boss; }));
+
+        LOG_INFO("server.loading", ">> mod-rare-tracker: {} spawns of {} rares and {} world bosses in {} zones (worked out {} zones) in {} ms",
+            rareIndex.spawns.size(), rareIndex.kinds.size() - bosses, bosses, rareIndex.zoneNames.size(), computed,
+            GetMSTimeDiffToNow(oldMSTime));
     }
 
     // --- Snapshot -----------------------------------------------------------------------------
@@ -459,6 +495,7 @@ namespace
                  << ",\"name\":" << JsonString(kind.name)
                  << ",\"minLevel\":" << uint32(kind.minLevel) << ",\"maxLevel\":" << uint32(kind.maxLevel)
                  << ",\"elite\":" << (kind.elite ? "true" : "false")
+                 << ",\"boss\":" << (kind.boss ? "true" : "false")
                  << ",\"map\":" << spawn.map << ",\"zone\":" << zone;
             if (area != zone)
             {
@@ -531,6 +568,7 @@ public:
     {
         config.enabled = sConfigMgr->GetOption<bool>("RareTracker.Enable", true);
         config.botsIgnoreRares = sConfigMgr->GetOption<bool>("RareTracker.BotsIgnoreRares", true);
+        config.botsIgnoreWorldBosses = sConfigMgr->GetOption<bool>("RareTracker.BotsIgnoreWorldBosses", true);
         config.refreshSeconds = std::max<uint32>(sConfigMgr->GetOption<uint32>("RareTracker.RefreshSeconds", 30), 5);
         config.idleSeconds = std::max<uint32>(sConfigMgr->GetOption<uint32>("RareTracker.IdleSeconds", 120), config.refreshSeconds);
 
@@ -539,6 +577,7 @@ public:
         {
             config.includedEntries = ParseEntries(sConfigMgr->GetOption<std::string>("RareTracker.IncludeEntries", ""));
             config.excludedEntries = ParseEntries(sConfigMgr->GetOption<std::string>("RareTracker.ExcludeEntries", ""));
+            config.worldBosses = ParseEntries(sConfigMgr->GetOption<std::string>("RareTracker.WorldBosses", DEFAULT_WORLD_BOSSES));
             config.httpEnabled = sConfigMgr->GetOption<bool>("RareTracker.Http.Enable", true);
             config.httpAddress = sConfigMgr->GetOption<std::string>("RareTracker.Http.BindAddress", "0.0.0.0");
             config.httpPort = uint16(sConfigMgr->GetOption<uint32>("RareTracker.Http.Port", 8095));
@@ -585,11 +624,11 @@ class RareTrackerUnitScript : public UnitScript
 public:
     RareTrackerUnitScript() : UnitScript("RareTrackerUnitScript", true, { UNITHOOK_IF_NORMAL_REACTION }) { }
 
-    // Free-roaming bots and open-world rares see each other as friendly: no targeting, no AoE,
-    // no aggro.
+    // Free-roaming bots and open-world rares and world bosses see each other as friendly: no
+    // targeting, no AoE, no aggro.
     bool IfNormalReaction(Unit const* unit, Unit const* target, ReputationRank& repRank) override
     {
-        if (!config.enabled || !config.botsIgnoreRares || !unit || !target)
+        if (!AnyBotRule() || !unit || !target)
             return true;
 
         if (!KeepBotOffRare(unit, target))
@@ -603,8 +642,8 @@ public:
     // still grouped with a player. The core calls this on every UnitScript.
     uint32 DealDamage(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType /*damageType*/) override
     {
-        if (config.enabled && config.botsIgnoreRares && attacker && victim && attacker != victim
-            && IsOpenWorldRare(victim) && IsFreeRoamingBot(attacker))
+        if (AnyBotRule() && attacker && victim && attacker != victim
+            && IsBotProof(victim) && IsFreeRoamingBot(attacker))
             return 0;
 
         return damage;
