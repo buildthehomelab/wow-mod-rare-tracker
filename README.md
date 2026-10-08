@@ -1,8 +1,8 @@
 # Rare Tracker
 
 An [AzerothCore](https://www.azerothcore.org/) (WotLK 3.3.5a) module that keeps track of every
-rare and rare elite in the open world and serves the list from memory over HTTP, for a **live
-rare map** on your realm's website. It can also keep **playerbots off rares**, so the rares are
+rare and rare elite in the open world, plus the **world bosses**, and serves the list from memory
+over HTTP, for a **live rare map** on your realm's website. It can also keep **playerbots off rares**, so the rares are
 still there when real players come looking.
 
 - **Live and in memory.** The worldserver answers `GET /rares.json` itself. Nothing is written
@@ -12,8 +12,10 @@ still there when real players come looking.
   rare nobody is near is "up" unless the map has a respawn timer pending for it.
 - **Only real spawns.** Pooled rares show at the spot the pool picked, holiday and event spawns
   only while their event runs, and nothing phased away. Instances are left out.
+- **World bosses too.** Azuregos, Lord Kazzak, the four Emerald Dragons, Doom Lord Kazzak and
+  Doomwalker are on the list by default, flagged `boss`, with their multi-day respawn timers.
 - **Bots leave rares alone.** Playerbots that aren't grouped with a real player see open-world
-  rares as friendly, so they can't attack them and the rares don't aggro them.
+  rares and world bosses as friendly, so they can't attack them and they don't aggro the bots.
 
 The matching web page is in [wow-mod-azerothcore-portal](https://github.com/buildthehomelab/wow-mod-azerothcore-portal)
 (`rares.php`). It has continent and zone maps, a searchable list, and respawn countdowns.
@@ -45,7 +47,7 @@ is needed.
 On startup the log shows something like:
 
 ```
->> mod-rare-tracker: <n> rare spawns of <n> rares in <n> zones (worked out <n> zones) in <n> ms
+>> mod-rare-tracker: <n> spawns of <n> rares and <n> world bosses in <n> zones (worked out <n> zones) in <n> ms
 >> mod-rare-tracker: serving rares on http://0.0.0.0:8095/rares.json
 ```
 
@@ -103,10 +105,12 @@ Without the images, the page still works: it lists every rare and places them on
 |---|---|---|
 | `RareTracker.Enable` | `1` | Master switch. |
 | `RareTracker.BotsIgnoreRares` | `1` | Keep ungrouped playerbots off open-world rares (see below). |
+| `RareTracker.BotsIgnoreWorldBosses` | `1` | The same for world bosses. |
 | `RareTracker.RefreshSeconds` | `30` | How often the list is rebuilt while someone is watching (min. 5). |
 | `RareTracker.IdleSeconds` | `120` | Stop rebuilding when nobody has asked for this long. |
 | `RareTracker.IncludeEntries` | `""` | Comma-separated creature entries to track although they aren't ranked rare (e.g. `17591`, Blood Elf Bandit). Restart to change. |
 | `RareTracker.ExcludeEntries` | `""` | Comma-separated creature entries that are ranked rare but aren't really rares. Restart to change. |
+| `RareTracker.WorldBosses` | see below | Comma-separated world boss entries. Empty turns world bosses off. Restart to change. |
 | `RareTracker.Http.Enable` | `1` | Serve the list. |
 | `RareTracker.Http.BindAddress` | `0.0.0.0` | `0.0.0.0` in Docker; `127.0.0.1` to keep it local outside Docker. |
 | `RareTracker.Http.Port` | `8095` | |
@@ -114,10 +118,34 @@ Without the images, the page still works: it lists every rare and places them on
 
 The HTTP settings are read at startup only.
 
+### World bosses
+
+`RareTracker.WorldBosses` lists the world bosses by entry. Rank can't pick them out on its own,
+because faction leaders and plenty of quest bosses are ranked "boss" too. The default is every
+open-world boss in 3.3.5 (Wrath's own world bosses are all inside instances):
+
+| Entry | Boss | Where |
+|---|---|---|
+| 6109 | Azuregos | Azshara |
+| 12397 | Lord Kazzak | Blasted Lands (spawned by mod-individual-progression; not in stock AzerothCore) |
+| 14887 | Ysondre | Emerald Dragon portal |
+| 14888 | Lethon | Emerald Dragon portal |
+| 14889 | Emeriss | Emerald Dragon portal |
+| 14890 | Taerar | Emerald Dragon portal |
+| 17711 | Doomwalker | Shadowmoon Valley |
+| 18728 | Doom Lord Kazzak | Hellfire Peninsula |
+
+An entry with no open-world spawn is skipped. World bosses are tracked in any phase: rares outside
+the normal phase are treated as phased away, but mod-individual-progression puts the Emerald
+Dragons in its own phase (65536) for players at the right tier, and the map shows them to
+everyone. If a database has the Emerald Dragons in a pool, only the portal the pool picked shows,
+like any other pooled spawn.
+
 ## Bots and rares
 
 With `BotsIgnoreRares = 1`, a playerbot with **no real player in its group** (and its pets,
-totems and guardians) sees every open-world rare as friendly, and the rare sees the bot the
+totems and guardians) sees every open-world rare as friendly (`BotsIgnoreWorldBosses = 1` does the
+same for world bosses), and the rare sees the bot the
 same way:
 
 - the bot can't target it, and grinding bots pass it by;
@@ -142,7 +170,7 @@ from bot-only groups, from bots defending themselves when a rare aggroes them, a
   "generated": 1790861234, "refresh": 30, "up": 143,
   "zones": { "10": "Duskwood" },
   "rares": [
-    { "spawn": 4567, "entry": 522, "name": "Mor'Ladim", "minLevel": 35, "maxLevel": 35, "elite": true,
+    { "spawn": 4567, "entry": 522, "name": "Mor'Ladim", "minLevel": 35, "maxLevel": 35, "elite": true, "boss": false,
       "map": 0, "zone": 10, "wx": -10970.1, "wy": 288.4, "x": 46.31, "y": 79.12,
       "state": "up", "respawnSeconds": 9000,
       "live": true, "level": 35, "hp": 100, "inCombat": false }
@@ -152,6 +180,7 @@ from bot-only groups, from bots defending themselves when a rare aggroes them, a
 
 | Field | Meaning |
 |---|---|
+| `elite`, `boss` | Rare elite; world boss (from `RareTracker.WorldBosses`). `up` counts world bosses too. |
 | `x`, `y` | Zone map coordinates, as the in-game map shows them (`null` if the zone has no map). |
 | `zone`, `area` | The zone whose map shows the rare. A rare at a dungeon entrance or in Dalaran is shown on the surrounding zone's map, as in game, and `area` is the place it's really in (e.g. zone Westfall, area The Deadmines). |
 | `wx`, `wy` | World coordinates. |

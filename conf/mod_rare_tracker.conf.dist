@@ -3,9 +3,10 @@
 ########################################
 # mod-rare-tracker
 #
-# Tracks every rare and rare elite on the open-world maps (no instances) and serves the list as
-# JSON over HTTP from memory, for a live rare map on the realm's website. Nothing is written to
-# disk. It can also keep playerbots that aren't grouped with a real player off rares.
+# Tracks every rare and rare elite on the open-world maps (no instances), plus the world bosses,
+# and serves the list as JSON over HTTP from memory, for a live rare map on the realm's website.
+# Nothing is written to disk. It can also keep playerbots that aren't grouped with a real player
+# off rares and world bosses.
 ########################################
 
 #
@@ -26,6 +27,16 @@ RareTracker.Enable = 1
 #
 
 RareTracker.BotsIgnoreRares = 1
+
+#
+#    RareTracker.BotsIgnoreWorldBosses
+#        Description: The same rule for the world bosses in RareTracker.WorldBosses, so bot-only
+#                     groups can't kill them before real players get there. Bots grouped with a
+#                     real player fight them as normal.
+#        Default:     1
+#
+
+RareTracker.BotsIgnoreWorldBosses = 1
 
 #
 #    RareTracker.RefreshSeconds
@@ -66,6 +77,20 @@ RareTracker.IncludeEntries = ""
 #
 
 RareTracker.ExcludeEntries = ""
+
+#
+#    RareTracker.WorldBosses
+#        Description: World boss entries to track, comma separated. They show on the map flagged
+#                     as world bosses, in any phase (mod-individual-progression puts the Emerald
+#                     Dragons in its own phase), and BotsIgnoreWorldBosses covers them. Empty turns
+#                     world bosses off. Restart to change.
+#                     6109 Azuregos, 12397 Lord Kazzak (Blasted Lands, individual progression),
+#                     14887 Ysondre, 14888 Lethon, 14889 Emeriss, 14890 Taerar,
+#                     17711 Doomwalker, 18728 Doom Lord Kazzak
+#        Default:     "6109, 12397, 14887, 14888, 14889, 14890, 17711, 18728"
+#
+
+RareTracker.WorldBosses = "6109, 12397, 14887, 14888, 14889, 14890, 17711, 18728"
 
 #
 #    RareTracker.Http.Enable
