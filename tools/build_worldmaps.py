@@ -7,7 +7,8 @@ overlay on top (so the map looks fully explored), crops to the 1002x668 area the
 saves a JPEG. It also writes maps.json, which tells the page which image belongs to which zone and
 where each continent's edges are, so it can place rares by their world coordinates.
 
-Output (copy the whole folder to the portal's realm-public folder as "worldmap"):
+Output (copy the whole folder to wow-mod-azerothcore-portal's realm-public folder as "worldmap",
+or wherever your own site serves it from):
     zone-<areaId>.jpg        one per zone, named by the zone id mod-rare-tracker reports
     continent-<mapId>.jpg    Eastern Kingdoms (0), Kalimdor (1), Outland (530), Northrend (571)
     maps.json

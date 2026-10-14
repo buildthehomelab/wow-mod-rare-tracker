@@ -54,7 +54,9 @@ On startup the log shows something like:
 ### Reaching it from the website
 
 The endpoint listens inside the worldserver container. Other containers on the AzerothCore
-network reach it by container name, so **no port has to be published** on the host:
+network reach it by container name, so **no port has to be published** on the host. Any site can
+fetch `/rares.json` this way; the steps below are for wow-mod-azerothcore-portal, whose container
+is `wow-register`:
 
 ```bash
 docker exec wow-register php -r 'echo file_get_contents("http://ac-worldserver:8095/health");'
